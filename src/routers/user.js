@@ -1,18 +1,65 @@
+//Importing modules
 const express = require("express");
+
+//Importing from local
 const User = require("../models/user");
+const auth = require("../middleware/auth");
 
 const router = new express.Router();
+
 router.post("/users", async (req, res) => {
   const user = new User(req.body);
   try {
     await user.save();
-    res.status(201).send(user);
+    const token = await user.generateAuthToken();
+    res.send({ user, token });
   } catch (ex) {
-    res.status(400).send(error);
+    res.status(400).send(ex);
+    console.log(ex);
   }
 });
 
-router.get("/users", async (req, res) => {
+router.get("/users/me", auth, async (req, res) => {
+  res.send(req.user);
+});
+router.post("/users/login", async (req, res) => {
+  try {
+    const user = await User.findByCredentials(
+      req.body.email,
+      req.body.password
+    );
+    const token = await user.generateAuthToken();
+    res.send({ user, token });
+    console.log(user);
+  } catch (erro) {
+    res.status(400).send();
+    console.log(erro);
+  }
+});
+
+router.post("/users/logout", auth, async (req, res) => {
+  try {
+    req.user.tokens = req.user.tokens.filter((token) => {
+      return token.token !== req.token;
+    });
+    await req.user.save();
+
+    res.send();
+  } catch (e) {
+    res.status(500).send();
+  }
+});
+
+router.post("/users/logoutAll", auth, async (req, res) => {
+  try {
+    req.user.tokens = [];
+    await req.user.save();
+    res.send();
+  } catch (error) {
+    res.status(500).send();
+  }
+});
+router.get("/users", auth, async (req, res) => {
   try {
     const users = await User.find({});
     res.send(users);
@@ -45,10 +92,13 @@ router.patch("/users/:id", async (req, res) => {
     return res.status(400).send({ error: "Invalid Update" });
   }
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const user = await User.findById(req.params.id);
+    updates.forEach((update) => (user[update] = req.body[update]));
+    await user.save();
+    // const user = await User.findByIdAndUpdate(req.params.id, req.body, {
+    //   new: true,
+    //   runValidators: true,
+    // });
 
     if (!user) {
       return res.status(404).send();

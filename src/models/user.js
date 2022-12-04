@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
 const validator = require("validator");
-
-const User = mongoose.model("User", {
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
@@ -9,6 +10,7 @@ const User = mongoose.model("User", {
   },
   email: {
     type: String,
+    unique: true,
     required: true,
     trim: true,
     lowercase: true,
@@ -38,6 +40,63 @@ const User = mongoose.model("User", {
       }
     },
   },
+  tokens: [
+    {
+      token: {
+        type: String,
+        required: true,
+      },
+    },
+  ],
 });
+//Hiding private data from user
+
+// userSchema.methods.getPublicProfile = function () {
+//   const user = this;
+//   const userObject = user.toObject();
+//   delete userObject.password;
+//   delete userObject.tokens;
+//   return userObject;
+// };
+
+userSchema.methods.toJSON = function () {
+  const user = this;
+  const userObject = user.toObject();
+  delete userObject.password;
+  delete userObject.tokens;
+  return userObject;
+};
+//Generating Authentication token
+
+userSchema.methods.generateAuthToken = async function () {
+  const user = this;
+  const token = jwt.sign({ _id: user._id.toString() }, "secretsecret");
+
+  user.tokens = user.tokens.concat({ token });
+  await user.save();
+  return token;
+};
+//Testing Users Login
+userSchema.statics.findByCredentials = async (email, password) => {
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    throw new Error("Unable to Login");
+  }
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    throw new Error("Unable to Login");
+  }
+  return user;
+};
+//Plain text hash password
+userSchema.pre("save", async function (next) {
+  const user = this;
+  if (user.isModified("password")) {
+    user.password = await bcrypt.hash(user.password, 8);
+  }
+  next();
+});
+const User = mongoose.model("User", userSchema);
 
 module.exports = User;
